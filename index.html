@@ -193,7 +193,7 @@
         </div>
 
         <!-- NAVEGACIÓN INFERIOR (BOTTOM BAR) -->
-        <nav class="absolute bottom-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur border-t border-slate-800 flex justify-around items-center px-4 z-25">
+        <nav class="absolute bottom-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur border-t border-slate-800 flex justify-around items-center px-4 z-20">
             <button class="nav-item active text-emerald-400 flex flex-col items-center space-y-1 transition" data-target="section-home">
                 <i class="fa-solid fa-chart-line text-base"></i>
                 <span class="text-[10px] font-medium">Mercado</span>
@@ -210,9 +210,8 @@
 
     </div>
 
-    <!-- SCRIPT DE CONTROL Y CONEXIÓN AL BACKEND UNIFICADO -->
+    <!-- SCRIPT DE CONEXIÓN Y FUNCIONALIDAD (MANTIENE TU DISEÑO INTACTO) -->
     <script>
-        // Al estar integrado en el mismo servidor de Render, la API responde en la ruta relativa /api/market-stats
         const CONFIG = {
             API_URL: "/api/market-stats", 
             REFRESH_INTERVAL: 30000
@@ -324,8 +323,7 @@
 
                 updateUIValues(data);
             } catch (error) {
-                console.warn("Usando datos locales de respaldo (Backend desconectado o cargando):", error);
-                // Datos de respaldo para que la interfaz nunca se quede en blanco (--,--):
+                console.warn("Backend conectándose o cargando datos de respaldo:", error);
                 updateUIValues({
                     buyPrice: 38.50,
                     sellPrice: 38.85,
