@@ -158,13 +158,6 @@
                             <div class="text-xs text-slate-400">Versión 2.4.0 - Edición Especial Venezuela</div>
                         </div>
                     </div>
-                    <div>
-                        <label class="text-xs text-slate-400 block mb-1">URL Backend (Render)</label>
-                        <input type="text" id="backend-url-input" value="https://tu-backend-en-render.com" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
-                    </div>
-                    <button onclick="saveBackendConfig()" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold py-2 rounded-xl transition">
-                        Guardar Conexión
-                    </button>
                 </div>
             </section>
 
@@ -200,7 +193,7 @@
         </div>
 
         <!-- NAVEGACIÓN INFERIOR (BOTTOM BAR) -->
-        <nav class="absolute bottom-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur border-t border-slate-800 flex justify-around items-center px-4 z-20">
+        <nav class="absolute bottom-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur border-t border-slate-800 flex justify-around items-center px-4 z-25">
             <button class="nav-item active text-emerald-400 flex flex-col items-center space-y-1 transition" data-target="section-home">
                 <i class="fa-solid fa-chart-line text-base"></i>
                 <span class="text-[10px] font-medium">Mercado</span>
@@ -217,10 +210,11 @@
 
     </div>
 
-    <!-- SCRIPT DE CONTROL Y CONEXIÓN -->
+    <!-- SCRIPT DE CONTROL Y CONEXIÓN AL BACKEND UNIFICADO -->
     <script>
+        // Al estar integrado en el mismo servidor de Render, la API responde en la ruta relativa /api/market-stats
         const CONFIG = {
-            API_URL: "https://tu-backend-en-render.com",
+            API_URL: "/api/market-stats", 
             REFRESH_INTERVAL: 30000
         };
 
@@ -324,23 +318,21 @@
 
         async function fetchMarketData() {
             try {
-                // Conexión real con tu backend en Render (descomenta cuando esté activo):
-                // const savedUrl = document.getElementById('backend-url-input')?.value || CONFIG.API_URL;
-                // const response = await fetch(`${savedUrl}/api/market-stats`);
-                // const data = await response.json();
-                
-                // Datos dinámicos simulados de respaldo:
-                const data = {
+                const response = await fetch(CONFIG.API_URL);
+                if (!response.ok) throw new Error("Error al obtener datos del servidor");
+                const data = await response.json();
+
+                updateUIValues(data);
+            } catch (error) {
+                console.warn("Usando datos locales de respaldo (Backend desconectado o cargando):", error);
+                // Datos de respaldo para que la interfaz nunca se quede en blanco (--,--):
+                updateUIValues({
                     buyPrice: 38.50,
                     sellPrice: 38.85,
                     bcvRate: 36.20,
                     euroRate: 39.40,
                     spread: "+0.91%"
-                };
-
-                updateUIValues(data);
-            } catch (error) {
-                console.error("Error al sincronizar con el backend de Render:", error);
+                });
             }
         }
 
@@ -351,10 +343,10 @@
             const euroEl = document.getElementById('euro-rate');
             const spreadEl = document.getElementById('spread-value');
 
-            if (buyEl) buyEl.textContent = data.buyPrice.toFixed(2);
-            if (sellEl) sellEl.textContent = data.sellPrice.toFixed(2);
-            if (bcvEl) bcvEl.textContent = data.bcvRate.toFixed(2);
-            if (euroEl) euroEl.textContent = data.euroRate.toFixed(2);
+            if (buyEl) buyEl.textContent = Number(data.buyPrice).toFixed(2);
+            if (sellEl) sellEl.textContent = Number(data.sellPrice).toFixed(2);
+            if (bcvEl) bcvEl.textContent = Number(data.bcvRate).toFixed(2);
+            if (euroEl) euroEl.textContent = Number(data.euroRate).toFixed(2);
             if (spreadEl) spreadEl.textContent = data.spread;
         }
 
@@ -371,15 +363,6 @@
                     badge.classList.add('bg-emerald-500/20', 'text-emerald-300');
                     alert("Auditoría de precios completada: Protección activa y respuesta del sistema normalizada.");
                 }, 1200);
-            }
-        }
-
-        function saveBackendConfig() {
-            const inputVal = document.getElementById('backend-url-input').value;
-            if (inputVal) {
-                CONFIG.API_URL = inputVal;
-                alert("URL de Render guardada correctamente. La aplicación intentará sincronizar.");
-                fetchMarketData();
             }
         }
 
