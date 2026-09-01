@@ -448,149 +448,98 @@
   </div>
 
   <script>
-    // Variables globales de estado y mercado
+    // Variables globales de simulación de mercado y estado
     let marketData = {
-      buyPrice: 0,
-      sellPrice: 0,
-      bcvRate: 36.50,
-      euroRate: 39.80,
-      lastUpdated: new Date()
+      buyPrice: 942.50,
+      sellPrice: 948.80,
+      bcvRate: 915.20,
+      euroRate: 980.40,
+      secondsAgo: 0
     };
 
-    let chartInstance = null;
-    let currentPeriod = '1d';
     let currentAiMode = 1;
+    let chartInstance = null;
 
     // Inicialización al cargar la página
     document.addEventListener('DOMContentLoaded', () => {
-      fetchLiveMarketData();
-      initChart();
-      setInterval(updateSecondsAgo, 1000);
-      setInterval(fetchLiveMarketData, 30000); // Actualización cada 30 segundos
+      initMarketSimulation();
+      initChart('1d');
+      calculateRate();
+      switchAIMode(1);
+
+      // Intervalo de actualización de segundos transcurridos
+      setInterval(() => {
+        marketData.secondsAgo++;
+        document.getElementById('updated-ago').innerText = `hace ${marketData.secondsAgo} s`;
+      }, 1000);
     });
 
-    // Simulación / Conexión a Tasas en Vivo (Binance P2P & BCV)
-    async function fetchLiveMarketData() {
-      try {
-        // Petición a la API pública de Binance P2P para USDT/VES
-        const response = await fetch('https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            asset: 'USDT',
-            fiat: 'VES',
-            merchantCheck: false,
-            page: 1,
-            rows: 5,
-            tradeType: 'BUY' // Anuncios donde la gente vende USDT -> Compra del usuario
-          })
-        });
-        const data = await response.json();
-        
-        if (data && data.data && data.data.length > 0) {
-          marketData.buyPrice = parseFloat(data.data[0].adv.unitPrice);
-        } else {
-          marketData.buyPrice = 95.50; // Fallback seguro
-        }
+    // Simulación dinámica de precios P2P en vivo
+    function initMarketSimulation() {
+      updateDOMValues();
+    }
 
-        const responseSell = await fetch('https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            asset: 'USDT',
-            fiat: 'VES',
-            merchantCheck: false,
-            page: 1,
-            rows: 5,
-            tradeType: 'SELL' // Anuncios donde la gente compra USDT -> Venta del usuario
-          })
-        });
-        const dataSell = await responseSell.json();
+    function updateDOMValues() {
+      const spreadAbs = (marketData.sellPrice - marketData.buyPrice).toFixed(2);
+      const spreadPct = ((spreadAbs / marketData.buyPrice) * 100).toFixed(2);
+      const bcvGap = (((marketData.sellPrice - marketData.bcvRate) / marketData.bcvRate) * 100).toFixed(2);
 
-        if (dataSell && dataSell.data && dataSell.data.length > 0) {
-          marketData.sellPrice = parseFloat(dataSell.data[0].adv.unitPrice);
-        } else {
-          marketData.sellPrice = 94.20; // Fallback seguro
-        }
+      document.getElementById('buy-price').innerHTML = `${marketData.buyPrice.toLocaleString('es-VE', {minimumFractionDigits: 2})} <span class="text-xs font-medium text-slate-400">Bs</span>`;
+      document.getElementById('sell-price').innerHTML = `${marketData.sellPrice.toLocaleString('es-VE', {minimumFractionDigits: 2})} <span class="text-xs font-medium text-slate-400">Bs</span>`;
+      document.getElementById('spread-value').innerText = `${spreadPct}%`;
+      document.getElementById('spread-absolute').innerText = `${spreadAbs} Bs / USDT`;
+      document.getElementById('euro-rate').innerText = `${marketData.euroRate.toLocaleString('es-VE', {minimumFractionDigits: 2})} Bs/EUR`;
+      document.getElementById('bcv-rate').innerText = `${marketData.bcvRate.toLocaleString('es-VE', {minimumFractionDigits: 2})} Bs/USD`;
+      document.getElementById('bcv-gap').innerText = `Brecha P2P: +${bcvGap}%`;
 
-      } catch (e) {
-        // Valores por defecto si la red o CORS bloquean la consulta directa
-        marketData.buyPrice = 95.80;
-        marketData.sellPrice = 94.50;
-      }
-
-      marketData.bcvRate = 36.25; // Tasa oficial BCV estimada / referencia en vivo
-      marketData.euroRate = 39.40;
-      marketData.lastUpdated = new Date();
-
-      updateUIValues();
       calculateRate();
-      updateAIInsights();
     }
 
-    function updateUIValues() {
-      document.getElementById('buy-price').innerHTML = `${marketData.buyPrice.toFixed(2)} <span class="text-xs font-medium text-slate-400">Bs</span>`;
-      document.getElementById('sell-price').innerHTML = `${marketData.sellPrice.toFixed(2)} <span class="text-xs font-medium text-slate-400">Bs</span>`;
-      
-      const spreadAbs = marketData.buyPrice - marketData.sellPrice;
-      const spreadPct = marketData.sellPrice > 0 ? (spreadAbs / marketData.sellPrice) * 100 : 0;
-      
-      document.getElementById('spread-value').innerText = `${spreadPct.toFixed(2)}%`;
-      document.getElementById('spread-absolute').innerText = `${spreadAbs.toFixed(2)} Bs / USDT`;
-
-      document.getElementById('bcv-rate').innerText = `${marketData.bcvRate.toFixed(2)} Bs/USD`;
-      document.getElementById('euro-rate').innerText = `${marketData.euroRate.toFixed(2)} Bs/EUR`;
-
-      const bcvGap = ((marketData.buyPrice - marketData.bcvRate) / marketData.bcvRate) * 100;
-      document.getElementById('bcv-gap').innerText = `Brecha P2P: +${bcvGap.toFixed(1)}%`;
-
-      document.getElementById('chart-low').innerText = `${(marketData.sellPrice * 0.99).toFixed(2)} Bs`;
-      document.getElementById('chart-current').innerText = `${marketData.buyPrice.toFixed(2)} Bs`;
-      document.getElementById('chart-high').innerText = `${(marketData.buyPrice * 1.01).toFixed(2)} Bs`;
-    }
-
-    let secondsElapsed = 0;
-    function updateSecondsAgo() {
-      secondsElapsed++;
-      document.getElementById('updated-ago').innerText = `hace ${secondsElapsed} s`;
-    }
-
-    // Calculadora interactiva
+    // Calculadora dinámica
     function calculateRate() {
       const amount = parseFloat(document.getElementById('calc-amount').value) || 0;
       const rateType = document.getElementById('calc-rate').value;
       
-      let activeRate = marketData.buyPrice;
-      if (rateType === 'sell') activeRate = marketData.sellPrice;
-      if (rateType === 'bcv') activeRate = marketData.bcvRate;
-      if (rateType === 'euro') activeRate = marketData.euroRate;
+      let rate = marketData.sellPrice;
+      if (rateType === 'buy') rate = marketData.buyPrice;
+      if (rateType === 'bcv') rate = marketData.bcvRate;
+      if (rateType === 'euro') rate = marketData.euroRate;
 
-      const result = amount * activeRate;
+      const result = amount * rate;
       const bcvTotal = amount * marketData.bcvRate;
-      const diffBs = result - bcvTotal;
+      const diffVsBcv = result - bcvTotal;
 
       document.getElementById('calc-result').innerText = `${result.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs`;
-      document.getElementById('calc-diff').innerText = `${diffBs >= 0 ? '+' : ''}${diffBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs vs. Tasa BCV`;
+      document.getElementById('calc-diff').innerText = `${diffVsBcv >= 0 ? '+' : ''}${diffVsBcv.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs vs. Tasa BCV`;
     }
 
     function handleRateChange() {
       calculateRate();
     }
 
-    // Gráfico con Chart.js
-    function initChart() {
+    // Configuración del Gráfico de Chart.js
+    function initChart(period) {
       const ctx = document.getElementById('marketChart').getContext('2d');
       
-      const labels = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', 'Actual'];
-      const prices = [
-        marketData.buyPrice * 0.992,
-        marketData.buyPrice * 0.995,
-        marketData.buyPrice * 0.990,
-        marketData.buyPrice * 1.002,
-        marketData.buyPrice * 0.998,
-        marketData.buyPrice * 1.005,
-        marketData.buyPrice
-      ];
+      // Datos simulados según el período
+      let labels = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', 'Actual'];
+      let dataPoints = [935, 938, 936, 940, 943, 941, marketData.sellPrice];
+
+      if(period === '7d') {
+        labels = ['Día 1', 'Día 2', 'Día 3', 'Día 4', 'Día 5', 'Día 6', 'Hoy'];
+        dataPoints = [920, 925, 930, 928, 935, 940, marketData.sellPrice];
+      } else if(period === '30d') {
+        labels = ['Sem 1', 'Sem 2', 'Sem 3', 'Hoy'];
+        dataPoints = [905, 915, 930, marketData.sellPrice];
+      }
+
+      document.getElementById('chart-low',).innerText = `${Math.min(...dataPoints).toFixed(2)} Bs`;
+      document.getElementById('chart-high').innerText = `${Math.max(...dataPoints).toFixed(2)} Bs`;
+      document.getElementById('chart-current').innerText = `${marketData.sellPrice.toFixed(2)} Bs`;
+
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
 
       chartInstance = new Chart(ctx, {
         type: 'line',
@@ -598,14 +547,14 @@
           labels: labels,
           datasets: [{
             label: 'USDT/VES P2P',
-            data: prices,
+            data: dataPoints,
             borderColor: '#34d399',
             backgroundColor: 'rgba(52, 211, 153, 0.08)',
             borderWidth: 2,
             fill: true,
             tension: 0.35,
-            pointRadius: 3,
-            pointBackgroundColor: '#34d399'
+            pointBackgroundColor: '#34d399',
+            pointRadius: 3
           }]
         },
         options: {
@@ -613,98 +562,82 @@
           maintainAspectRatio: false,
           plugins: { legend: { display: false } },
           scales: {
-            x: { grid: { color: 'rgba(255, 255, 255, 0.04)' }, ticks: { color: '#64748b', font: { size: 10 } } },
-            y: { grid: { color: 'rgba(255, 255, 255, 0.04)' }, ticks: { color: '#64748b', font: { size: 10 } } }
+            x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#64748b', font: { size: 10 } } },
+            y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#64748b', font: { size: 10 } } }
           }
         }
       });
     }
 
     function setChartPeriod(period, btn) {
-      currentPeriod = period;
       document.querySelectorAll('.period-btn').forEach(b => b.setAttribute('aria-selected', 'false'));
       btn.setAttribute('aria-selected', 'true');
-      document.getElementById('chart-period-label').innerText = period === '1d' ? '1 día' : period === '7d' ? '7 días' : '30 días';
-
-      // Simular cambio de dataset según período
-      let factor = period === '7d' ? 1.02 : period === '30d' ? 1.05 : 1;
-      if (chartInstance) {
-        chartInstance.data.datasets[0].data = [
-          marketData.buyPrice * 0.98 * factor,
-          marketData.buyPrice * 0.99 * factor,
-          marketData.buyPrice * 0.97 * factor,
-          marketData.buyPrice * 1.01 * factor,
-          marketData.buyPrice * 1.00 * factor,
-          marketData.buyPrice * 1.02 * factor,
-          marketData.buyPrice
-        ];
-        chartInstance.update();
-      }
+      
+      const labelsMap = { '1d': '1 día', '7d': '7 días', '30d': '30 días' };
+      document.getElementById('chart-period-label').innerText = labelsMap[period];
+      initChart(period);
     }
 
-    // Modos de Venbot AI y Análisis Táctico
+    // Modos de Venbot AI y Blindaje de Precios
     function switchAIMode(mode) {
       currentAiMode = mode;
       document.querySelectorAll('.ai-mode-btn').forEach(b => b.classList.remove('active'));
       document.getElementById(`btn-ai-mode-${mode}`).classList.add('active');
-      updateAIInsights();
-    }
 
-    function updateAIInsights() {
       const insightText = document.getElementById('gemini-insight-text');
-      const m1Val = document.getElementById('m1-val');
-      const m2Val = document.getElementById('m2-val');
-      const m3Val = document.getElementById('m3-val');
-      const m4Val = document.getElementById('m4-val');
+      const m1T = document.getElementById('m1-title');
+      const m1V = document.getElementById('m1-val');
+      const m2T = document.getElementById('m2-title');
+      const m2V = document.getElementById('m2-val');
+      const m3T = document.getElementById('m3-title');
+      const m3V = document.getElementById('m3-val');
+      const m4T = document.getElementById('m4-title');
+      const m4V = document.getElementById('m4-val');
 
-      if (currentAiMode === 1) {
-        document.getElementById('ai-title-display').innerText = 'Blindaje Operativo Binance P2P';
-        insightText.innerText = `El spread actual se mantiene estable en ${(marketData.buyPrice - marketData.sellPrice).toFixed(2)} Bs. Recomendación táctica: excelente momento para arbitraje rápido con bancos nacionales de alta liquidez (Pago Móvil).`;
-        m1Val.innerText = '🟢 COMPRA P2P';
-        m2Val.innerText = '⚡ ÓPTIMA (< 5 min)';
-        m3Val.innerText = '🟢 ALTA ROTACIÓN';
-        m4Val.innerText = `${(marketData.sellPrice * 0.99).toFixed(2)} – ${(marketData.buyPrice * 1.01).toFixed(2)} Bs`;
-      } else if (currentAiMode === 2) {
-        document.getElementById('ai-title-display').innerText = 'Análisis de Flujo P2P & Brecha BCV';
-        insightText.innerText = `La brecha cambiaria frente al BCV (${marketData.bcvRate.toFixed(2)} Bs) se ubica en rangos operativos normales. La presión de demanda institucional absorbe la liquidez matutina.`;
-        m1Val.innerText = '📊 ESTABLE';
-        m2Val.innerText = '🔄 FLUJO CONSTANTE';
-        m3Val.innerText = '🛡️ BLINDAJE ACTIVO';
-        m4Val.innerText = `BCV: ${marketData.bcvRate.toFixed(2)} Bs`;
-      } else {
-        document.getElementById('ai-title-display').innerText = 'Niveles Clave y Soportes P2P';
-        insightText.innerText = `Soporte crítico de compra detectado en ${marketData.sellPrice.toFixed(2)} Bs. Resistencia superior firme en ${marketData.buyPrice.toFixed(2)} Bs. Operar dentro del rango recomendado.`;
-        m1Val.innerText = '🎯 ZONA SOPORTE';
-        m2Val.innerText = '⚠️ RIESGO BAJO';
-        m3Val.innerText = '📈 TENDENCIA LATERAL';
-        m4Val.innerText = `${marketData.sellPrice.toFixed(2)} – ${marketData.buyPrice.toFixed(2)} Bs`;
+      if (mode === 1) {
+        document.getElementById('ai-title-display').innerText = "Blindaje Operativo Binance P2P";
+        insightText.innerText = "El sistema de protección detecta estabilidad en la banda de anunciantes principales. Margen óptimo para posicionamiento rápido sin exposición a alta volatilidad.";
+        m1T.innerText = "SEÑAL P2P"; m1V.innerText = "🟢 COMPRA P2P";
+        m2T.innerText = "VELOCIDAD P2P"; m2V.innerText = "⚡ ÓPTIMA (< 5 min)";
+        m3T.innerText = "LIQUIDEZ ANUNCIANTES"; m3V.innerText = "🟢 ALTA ROTACIÓN";
+        m4T.innerText = "RANGO P2P 4H"; m4V.innerText = `${(marketData.buyPrice - 2).toFixed(2)} – ${(marketData.sellPrice + 2).toFixed(2)} Bs`;
+      } else if (mode === 2) {
+        document.getElementById('ai-title-display').innerText = "Análisis de Flujo y Ordenes P2P";
+        insightText.innerText = "Flujo de órdenes de compra con alta demanda en métodos de pago nacionales (Pago Móvil / Transferencias). Brecha controlada frente al tipo de cambio oficial.";
+        m1T.innerText = "VOLUMEN ESTIMADO"; m1V.innerText = "📈 ALTO INFLUJO";
+        m2T.innerText = "PRESIÓN COMPRA"; m2V.innerText = "🔥 68% DOMINANTE";
+        m3T.innerText = "MÉTODOS PREDOMINANTES"; m3V.innerText = "💳 PAGO MÓVIL";
+        m4T.innerText = "TENDENCIA DIARIA"; m4V.innerText = "↗️ ALCISTA ESTABLE";
+      } else if (mode === 3) {
+        document.getElementById('ai-title-display').innerText = "Niveles Clave y Soportes P2P";
+        insightText.innerText = "Establecidos soportes duros basados en la media móvil de anunciantes verificados. Zona de acumulación ideal identificada en el piso actual.";
+        m1T.innerText = "SOPORTE P2P"; m1V.innerText = `${(marketData.buyPrice - 5).toFixed(2)} Bs`;
+        m2T.innerText = "RESISTENCIA P2P"; m2V.innerText = `${(marketData.sellPrice + 5).toFixed(2)} Bs`;
+        m3T.innerText = "RIESGO LIQUIDEZ"; m3V.innerText = "🟢 BAJO RIESGO";
+        m4T.innerText = "ESTADO DE ALERTA"; m4V.innerText = "🛡️ BLINDADO";
       }
     }
 
-    // Modales y Navegación Inferior
-    function setActiveNav(navName, sectionId) {
-      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active', 'text-emerald-400'));
-      document.querySelectorAll('.nav-item').forEach(el => el.classList.add('text-slate-400'));
+    // Navegación Inferior Móvil y Modales
+    function setActiveNav(navId, sectionId) {
+      document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active', 'text-emerald-400'));
+      document.querySelectorAll('.nav-item').forEach(item => item.classList.add('text-slate-400'));
       
-      const activeBtn = document.getElementById(`nav-${navName}`);
-      if (activeBtn) {
-        activeBtn.classList.add('active');
+      const activeBtn = document.getElementById(`nav-${navId}`);
+      if(activeBtn) {
+        activeBtn.classList.add('active', 'text-emerald-400');
         activeBtn.classList.remove('text-slate-400');
       }
 
       const targetSection = document.getElementById(sectionId);
-      if (targetSection) {
+      if(targetSection) {
         targetSection.scrollIntoView({ behavior: 'smooth' });
       }
     }
 
     function handleLoginClick() {
       document.getElementById('adModal').classList.remove('hidden');
-      document.getElementById('ad-description-text').innerText = 'Inicia sesión para desbloquear herramientas avanzadas de arbitraje y alertas automáticas en tiempo real.';
-    }
-
-    function closeAdModal() {
-      document.getElementById('adModal').classList.add('hidden');
+      document.getElementById('ad-description-text').innerText = "Inicia sesión próximamente para sincronizar tus bots y alertas personalizadas de Binance P2P.";
     }
 
     function handleAIClick() {
@@ -715,17 +648,39 @@
       document.getElementById('aiChatModal').classList.add('hidden');
     }
 
+    function closeAdModal() {
+      document.getElementById('adModal').classList.add('hidden');
+    }
+
+    function openAlertsModal() {
+      document.getElementById('alertsModal').classList.remove('hidden');
+    }
+
+    function closeAlertsModal() {
+      document.getElementById('alertsModal').classList.add('hidden');
+      document.getElementById('alert-status-msg').classList.add('hidden');
+    }
+
+    function saveAlertConfig() {
+      const statusMsg = document.getElementById('alert-status-msg');
+      statusMsg.classList.remove('hidden');
+      setTimeout(() => {
+        closeAlertsModal();
+      }, 1500);
+    }
+
+    // Chat interactivo con Venbot AI
     function sendAIMessage() {
       const input = document.getElementById('ai-user-input');
       const text = input.value.trim();
-      if (!text) return;
+      if(!text) return;
 
       const container = document.getElementById('ai-chat-messages');
-      
-      // Mensaje usuario
+
+      // Mensaje del usuario
       container.innerHTML += `
         <div class="flex items-start gap-2.5 justify-end">
-          <div class="bg-emerald-600/90 text-white rounded-2xl p-3 max-w-[85%] leading-relaxed">
+          <div class="bg-emerald-600/90 text-slate-950 font-medium rounded-2xl p-3 max-w-[85%] leading-relaxed">
             ${escapeHtml(text)}
           </div>
         </div>
@@ -733,10 +688,19 @@
       input.value = '';
       container.scrollTop = container.scrollHeight;
 
-      // Respuesta automática de Venbot AI basada en el contexto del mercado
+      // Respuesta simulada de la IA especializada en Binance P2P
       setTimeout(() => {
-        let reply = `Analizando tu consulta sobre "${text}" en el mercado USDT/VES... El precio de compra actual es ${marketData.buyPrice.toFixed(2)} Bs y la venta en ${marketData.sellPrice.toFixed(2)} Bs. Te sugiero operar manteniendo una gestión de riesgo adecuada y validando la reputación del comerciante en Binance P2P.`;
-        
+        let reply = "Analizando el libro de órdenes P2P actual... La tendencia se mantiene estable con buena rotación en los principales bancos nacionales.";
+        const lower = text.toLowerCase();
+        if(lower.includes('bcv') || lower.includes('oficial')) {
+          reply = `La tasa oficial actual del BCV se ubica en ${marketData.bcvRate.toFixed(2)} Bs/USD, manteniendo una brecha saludable con el mercado P2P.`;
+        } else if(lower.includes('spread') || lower.includes('diferencia')) {
+          const spreadAbs = (marketData.sellPrice - marketData.buyPrice).toFixed(2);
+          reply = `El spread actual es de ${spreadAbs} Bs entre compra y venta en Binance P2P.`;
+        } else if(lower.includes('comprar') || lower.includes('vender')) {
+          reply = `Las mejores referencias actuales son: Compra P2P a ${marketData.buyPrice.toFixed(2)} Bs y Venta P2P a ${marketData.sellPrice.toFixed(2)} Bs.`;
+        }
+
         container.innerHTML += `
           <div class="flex items-start gap-2.5">
             <div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
@@ -751,30 +715,8 @@
       }, 700);
     }
 
-    function openAlertsModal() {
-      document.getElementById('alertsModal').classList.remove('hidden');
-    }
-
-    function closeAlertsModal() {
-      document.getElementById('alertsModal').classList.add('hidden');
-      document.getElementById('alert-status-msg').classList.add('hidden');
-    }
-
-    function saveAlertConfig() {
-      const targetPrice = document.getElementById('alert-target-price').value;
-      const contact = document.getElementById('alert-contact').value;
-      if (!targetPrice || !contact) {
-        alert('Por favor completa todos los campos para configurar la alerta.');
-        return;
-      }
-      document.getElementById('alert-status-msg').classList.remove('hidden');
-      setTimeout(() => {
-        closeAlertsModal();
-      }, 1500);
-    }
-
-    function escapeHtml(str) {
-      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    function escapeHtml(string) {
+      return string.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
   </script>
 </body>
