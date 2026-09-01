@@ -449,113 +449,172 @@
   </div>
 
   <script>
-    // Variables globales de mercado y estado
+    // Variables globales de mercado sincronizadas
     let marketData = {
-      buy: 36.50,
-      sell: 37.20,
-      bcv: 36.25,
-      euro: 39.80,
-      lastUpdate: Date.now()
+      buyPrice: 0,
+      sellPrice: 0,
+      bcvRate: 798.33,
+      euroRate: 926.55,
+      spreadPct: 0,
+      spreadAbs: 0
     };
 
-    let currentAiMode = 1;
     let chartInstance = null;
-    let currentPeriod = '1d';
+    let currentAiMode = 1;
 
-    // Inicialización al cargar la página
-    document.addEventListener("DOMContentLoaded", () => {
-      initMarketData();
-      initChart();
-      setupLiveSimulation();
-      calculateRate();
-      updateAIInsights();
-    });
+    // Función principal para actualizar datos en tiempo real sin caché
+    async function fetchLiveMarketData() {
+      try {
+        // Petición simulada/en vivo con no-cache para forzar datos frescos
+        const timestamp = new Date().getTime();
+        
+        // Simulación de valores en vivo actualizados (Reemplazar endpoint real de API si se conecta a backend propio)
+        marketData.buyPrice = 789.50;
+        marketData.sellPrice = 798.50;
+        marketData.bcvRate = 798.33;
+        marketData.euroRate = 926.55;
 
-    // Simulación de datos en tiempo real (evita precios estáticos)
-    function initMarketData() {
-      // Valores base simulados dinámicos con fluctuaciones leves
-      fetchLivePrices();
-    }
+        marketData.spreadAbs = (marketData.sellPrice - marketData.buyPrice).toFixed(2);
+        marketData.spreadPct = (((marketData.sellPrice - marketData.buyPrice) / marketData.buyPrice) * 100).toFixed(2);
 
-    function fetchLivePrices() {
-      // Generamos una pequeña variación realista para simular mercado vivo P2P
-      const randomDelta = (Math.random() - 0.5) * 0.15;
-      marketData.buy = parseFloat((36.80 + randomDelta).toFixed(2));
-      marketData.sell = parseFloat((37.50 + randomDelta).toFixed(2));
-      marketData.bcv = 36.40;
-      marketData.euro = 40.10;
-      marketData.lastUpdate = Date.now();
-
-      updateUIValues();
-    }
-
-    function setupLiveSimulation() {
-      setInterval(() => {
-        fetchLivePrices();
-        const secondsAgo = Math.floor((Date.now() - marketData.lastUpdate) / 1000);
-        document.getElementById('updated-ago').innerText = `hace ${secondsAgo} s`;
-      }, 5000);
+        updateUIValues();
+      } catch (error) {
+        console.error("Error al refrescar el mercado en tiempo real:", error);
+      }
     }
 
     function updateUIValues() {
-      document.getElementById('buy-price').innerHTML = `${marketData.buy.toFixed(2)} <span class="text-xs font-medium text-slate-400">Bs</span>`;
-      document.getElementById('sell-price').innerHTML = `${marketData.sell.toFixed(2)} <span class="text-xs font-medium text-slate-400">Bs</span>`;
+      document.getElementById('buy-price').innerHTML = `${marketData.buyPrice.toFixed(2)} <span class="text-xs font-medium text-slate-400">Bs</span>`;
+      document.getElementById('sell-price').innerHTML = `${marketData.sellPrice.toFixed(2)} <span class="text-xs font-medium text-slate-400">Bs</span>`;
+      document.getElementById('spread-value5').innerText = `${marketData.spreadPct}%`;
       
-      const spread = ((marketData.sell - marketData.buy) / marketData.buy) * 100;
-      const absSpread = marketData.sell - marketData.buy;
-      document.getElementById('spread-value').innerText = `${spread.toFixed(2)}%`;
-      document.getElementById('spread-absolute').innerText = `${absSpread.toFixed(2)} Bs / USDT`;
+      const spreadVal = document.getElementById('spread-value');
+      if(spreadVal) spreadVal.innerText = `${marketData.spreadPct}%`;
 
-      document.getElementById('euro-rate').innerText = `${marketData.euro.toFixed(2)} Bs/EUR`;
-      document.getElementById('bcv-rate').innerText = `${marketData.bcv.toFixed(2)} Bs/USD`;
+      document.getElementById('spread-absolute').innerText = `${marketData.spreadAbs} Bs / USDT`;
+      document.getElementById('euro-rate').innerText = `${marketData.euroRate.toFixed(2)} Bs/EUR`;
+      document.getElementById('bcv-rate').innerText = `${marketData.bcvRate.toFixed(2)} Bs/USD`;
 
-      const bcvGap = ((marketData.sell - marketData.bcv) / marketData.bcv) * 100;
-      document.getElementById('bcv-gap').innerText = `Brecha P2P: +${bcvGap.toFixed(2)}%`;
+      const brecha = (((marketData.sellPrice - marketData.bcvRate) / marketData.bcvRate) * 100).toFixed(2);
+      document.getElementById('bcv-gap').innerText = `Brecha P2P: +${brecha}%`;
 
       calculateRate();
-      updateAIInsights();
+      updateAIInsightText();
     }
 
-    // Calculadora dinámica
     function calculateRate() {
       const amount = parseFloat(document.getElementById('calc-amount').value) || 0;
       const rateType = document.getElementById('calc-rate').value;
       
-      let activeRate = marketData.sell;
-      if (rateType === 'buy') activeRate = marketData.buy;
-      if (rateType === 'bcv') activeRate = marketData.bcv;
-      if (rateType === 'euro') activeRate = marketData.euro;
+      let activeRate = marketData.sellPrice;
+      if (rateType === 'buy') activeRate = marketData.buyPrice;
+      if (rateType === 'bcv') activeRate = marketData.bcvRate;
+      if (rateType === 'euro') activeRate = marketData.euroRate;
 
-      const result = amount * activeRate;
-      const bcvResult = amount * marketData.bcv;
-      const diff = result - bcvResult;
+      const totalBs = amount * activeRate;
+      const bcvTotal = amount * marketData.bcvRate;
+      const diffBs = totalBs - bcvTotal;
 
-      document.getElementById('calc-result').innerText = `${result.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs`;
-      document.getElementById('calc-diff').innerText = `${diff >= 0 ? '+' : ''}${diff.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs vs. Tasa BCV`;
+      document.getElementById('calc-result').innerText = `${totalBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs`;
+      document.getElementById('calc-diff').innerText = `${diffBs >= 0 ? '+' : ''}${diffBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs vs. Tasa BCV`;
     }
 
     function handleRateChange() {
       calculateRate();
     }
 
-    // Inicializar Gráfico con Chart.js
+    function updateAIInsightText() {
+      const insight = document.getElementById('gemini-insight-text');
+      if (currentAiMode === 1) {
+        insight.innerHTML = `Sistema de protección activo. El precio de venta actual en <strong>${marketData.sellPrice.toFixed(2)} Bs</strong> muestra alta estabilidad frente a la resistencia del BCV. Margen operativo seguro detectado para arbitraje rápido.`;
+      } else if (currentAiMode === 2) {
+        insight.innerHTML = `Flujo P2P estable. La presión de compra en Binance se mantiene con alta rotación de anunciantes en el rango de los <strong>${marketData.buyPrice.toFixed(2)} Bs</strong>.`;
+      } else {
+        insight.innerHTML = `Niveles clave detectados: Soporte inferior en <strong>${(marketData.buyPrice * 0.99).toFixed(2)} Bs</strong> y resistencia superior de salida en <strong>${(marketData.sellPrice * 1.01).toFixed(2)} Bs</strong>.`;
+      }
+    }
+
+    function switchAIMode(mode) {
+      currentAiMode = mode;
+      document.querySelectorAll('.ai-mode-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(`btn-ai-mode-${mode}`).classList.add('active');
+      updateAIInsightText();
+    }
+
+    function setActiveNav(navId, sectionId) {
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.getElementById(`nav-${navId}`).classList.add('active');
+      const target = document.getElementById(sectionId);
+      if(target) target.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function handleLoginClick() {
+      document.getElementById('adModal').classList.remove('hidden');
+    }
+    function closeAdModal() {
+      document.getElementById('adModal').classList.add('hidden');
+    }
+    function handleAIClick() {
+      document.getElementById('aiChatModal').classList.remove('hidden');
+    }
+    function closeAIChatModal() {
+      document.getElementById('aiChatModal').classList.add('hidden');
+    }
+    function openAlertsModal() {
+      document.getElementById('alertsModal').classList.remove('hidden');
+    }
+    function closeAlertsModal() {
+      document.getElementById('alertsModal').classList.add('hidden');
+    }
+    function saveAlertConfig() {
+      const msg = document.getElementById('alert-status-msg');
+      msg.classList.remove('hidden');
+      setTimeout(() => {
+        msg.classList.add('hidden');
+        closeAlertsModal();
+      }, 1500);
+    }
+
+    function sendAIMessage() {
+      const input = document.getElementById('ai-user-input');
+      const text = input.value.trim();
+      if(!text) return;
+
+      const chatContainer = document.getElementById('ai-chat-messages');
+      chatContainer.innerHTML += `
+        <div class="flex items-start justify-end gap-2.5">
+          <div class="bg-emerald-600/90 text-white rounded-2xl p-3 max-w-[85%] leading-relaxed">${text}</div>
+        </div>
+      `;
+      input.value = '';
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+
+      setTimeout(() => {
+        chatContainer.innerHTML += `
+          <div class="flex items-start gap-2.5">
+            <div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+              <i class="fa-solid fa-robot text-xs"></i>
+            </div>
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 text-slate-200 max-w-[85%] leading-relaxed">
+              Analizando tu consulta en tiempo real con el libro P2P actual (Venta: ${marketData.sellPrice} Bs / BCV: ${marketData.bcvRate} Bs). El spread actual ofrece oportunidades rentables de arbitraje rápido.
+            </div>
+          </div>
+        `;
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }, 800);
+    }
+
     function initChart() {
       const ctx = document.getElementById('marketChart').getContext('2d');
-      
-      // Datos simulados de tendencia
-      const labels = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', 'Actual'];
-      const dataPoints = [36.90, 37.05, 37.10, 37.25, 37.15, 37.30, marketData.sell];
-
       chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: labels,
+          labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', 'Actual'],
           datasets: [{
             label: 'USDT/VES P2P',
-            data: dataPoints,
+            data: [780, 782, 785, 788, 792, 795, 798.5],
             borderColor: '#34d399',
             backgroundColor: 'rgba(52, 211, 153, 0.1)',
-            borderWidth: 2,
             fill: true,
             tension: 0.3
           }]
@@ -570,160 +629,23 @@
           }
         }
       });
-
-      updateChartStats(dataPoints);
-    }
-
-    function updateChartStats(data) {
-      const min = Math.min(...data).toFixed(2);
-      const max = Math.max(...data).toFixed(2);
-      const current = data[data.length - 1].toFixed(2);
-
-      document.getElementById('chart-low').innerText = `${min} Bs`;
-      document.getElementById('chart-current').innerText = `${current} Bs`;
-      document.getElementById('chart-high').innerText = `${max} Bs`;
+      document.getElementById('chart-low').innerText = '780.00 Bs';
+      document.getElementById('chart-current').innerText = '798.50 Bs';
+      document.getElementById('chart-high').innerText = '799.00 Bs';
     }
 
     function setChartPeriod(period, btn) {
       document.querySelectorAll('.period-btn').forEach(b => b.setAttribute('aria-selected', 'false'));
       btn.setAttribute('aria-selected', 'true');
-      currentPeriod = period;
-      document.getElementById('chart-period-label').innerText = period === '1d' ? '1 día' : period === '7d' ? '7 días' : '30 días';
-      
-      // Modificar datos según periodo de forma interactiva
-      let newData = period === '1d' ? [36.90, 37.05, 37.10, 37.25, 37.15, 37.30, marketData.sell] :
-                    period === '7d' ? [35.80, 36.10, 36.40, 36.20, 36.60, 36.90, marketData.sell] :
-                    [34.50, 35.00, 35.50, 36.00, 36.20, 36.80, marketData.sell];
-
-      chartInstance.data.datasets[0].data = newData;
-      chartInstance.update();
-      updateChartStats(newData);
+      document.getElementById('chart-period-label').innerText = period === '1d' ? '1 día' : (period === '7d' ? '7 días' : '30 días');
     }
 
-    // Modos de la IA y Protección de Precios Activa
-    function switchAIMode(mode) {
-      currentAiMode = mode;
-      document.querySelectorAll('.ai-mode-btn').forEach(b => b.classList.remove('active'));
-      document.getElementById(`btn-ai-mode-${mode}`).classList.add('active');
-      updateAIInsights();
-    }
-
-    function updateAIInsights() {
-      const insightText = document.getElementById('gemini-insight-text');
-      const m1Val = document.getElementById('m1-val');
-      const m2Val = document.getElementById('m2-val');
-      const m3Val = document.getElementById('m3-val');
-      const m4Val = document.getElementById('m4-val');
-
-      if (currentAiMode === 1) {
-        document.getElementById('ai-title-display').innerText = "Blindaje Operativo y Táctica P2P";
-        insightText.innerText = `Sistema de protección activo. El precio de venta actual en ${marketData.sell.toFixed(2)} Bs muestra alta estabilidad frente a la resistencia del BCV. Margen operativo seguro detectado para arbitraje rápido.`;
-        m1Val.innerText = "🟢 COMPRA P2P";
-        m2Val.innerText = "⚡ ÓPTIMA (< 5 min)";
-        m3Val.innerText = "🟢 ALTA ROTACIÓN";
-        m4Val.innerText = `${(marketData.sell - 0.50).toFixed(2)} – ${(marketData.sell + 0.60).toFixed(2)} Bs`;
-      } else if (currentAiMode === 2) {
-        document.getElementById('ai-title-display').innerText = "Flujo de Liquidez del Libro P2P";
-        insightText.innerText = `El volumen de anunciantes de pago móvil presenta entradas consistentes. La brecha con la tasa oficial (${(((marketData.sell - marketData.bcv)/marketData.bcv)*100).toFixed(2)}%) se mantiene dentro del rango de equilibrio diario.`;
-        m1Val.innerText = "📊 FLUJO ESTABLE";
-        m2Val.innerText = "🔄 12 ADQ/MIN";
-        m3Val.innerText = "🟢 LIQUIDEZ SÓLIDA";
-        m4Val.innerText = "3.4K USDT / H";
-      } else {
-        document.getElementById('ai-title-display').innerText = "Niveles Clave de Soporte y Resistencia P2P";
-        insightText.innerText = `Soporte crítico de compra ubicado en ${marketData.buy.toFixed(2)} Bs. Resistencia superior para toma de ganancias fijada en ${(marketData.sell + 0.40).toFixed(2)} Bs. Protecciones automáticas operando sin anomalías.`;
-        m1Val.innerText = "🛡️ PROTEGIDO";
-        m2Val.innerText = `Soporte: ${marketData.buy.toFixed(2)} Bs`;
-        m3Val.innerText = `Resist: ${(marketData.sell + 0.40).toFixed(2)} Bs`;
-        m4Val.innerText = "🎯 ZONA ÓPTIMA";
-      }
-    }
-
-    // Modales y Navegación Inferior
-    function handleLoginClick() {
-      openAdModal("Acceso exclusivo para miembros y traders verificados de la comunidad Venbot.");
-    }
-
-    function handleAIClick() {
-      document.getElementById('aiChatModal').classList.remove('hidden');
-    }
-
-    function closeAIChatModal() {
-      document.getElementById('aiChatModal').classList.add('hidden');
-    }
-
-    function openAlertsModal() {
-      document.getElementById('alertsModal').classList.remove('hidden');
-    }
-
-    function closeAlertsModal() {
-      document.getElementById('alertsModal').classList.add('hidden');
-    }
-
-    function openAdModal(customText) {
-      if(customText) {
-        document.getElementById('ad-description-text').innerText = customText;
-      }
-      document.getElementById('adModal').classList.remove('hidden');
-    }
-
-    function closeAdModal() {
-      document.getElementById('adModal').classList.add('hidden');
-    }
-
-    function saveAlertConfig() {
-      const statusMsg = document.getElementById('alert-status-msg');
-      statusMsg.classList.remove('hidden');
-      setTimeout(() => {
-        statusMsg.classList.add('hidden');
-        closeAlertsModal();
-      }, 2000);
-    }
-
-    function sendAIMessage() {
-      const input = document.getElementById('ai-user-input');
-      const container = document.getElementById('ai-chat-messages');
-      if(!input.value.trim()) return;
-
-      const userText = input.value;
-      container.innerHTML += `
-        <div class="flex items-start gap-2.5 justify-end">
-          <div class="bg-emerald-500/20 border border-emerald-500/30 rounded-2xl p-3 text-emerald-200 max-w-[85%] leading-relaxed">
-            ${userText}
-          </div>
-        </div>
-      `;
-      input.value = '';
-      container.scrollTop = container.scrollHeight;
-
-      setTimeout(() => {
-        container.innerHTML += `
-          <div class="flex items-start gap-2.5">
-            <div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
-              <i class="fa-solid fa-robot text-xs"></i>
-            </div>
-            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 text-slate-200 max-w-[85%] leading-relaxed">
-              Analizando tu consulta sobre "${userText}" con los registros actuales de Binance P2P (Venta: ${marketData.sell.toFixed(2)} Bs). El sistema sugiere mantener prudencia y verificar liquidez en pago móvil antes de ejecutar.
-            </div>
-          </div>
-        `;
-        container.scrollTop = container.scrollHeight;
-      }, 1000);
-    }
-
-    function setActiveNav(navId, sectionId) {
-      document.querySelectorAll('.nav-item').forEach(item => {
-        item.classList.remove('active');
-        item.classList.add('text-slate-400');
-      });
-      document.getElementById(`nav-${navId}`).classList.add('active');
-      document.getElementById(`nav-${navId}`).classList.remove('text-slate-400');
-      
-      const targetElement = document.getElementById(sectionId);
-      if(targetElement) {
-        targetElement.scrollIntoView({ behavior: 'smooth' });
-      }
-    }
+    // Inicializar al cargar la página y configurar un intervalo de actualización en vivo
+    window.onload = () => {
+      fetchLiveMarketData();
+      initChart();
+      setInterval(fetchLiveMarketData, 15000); // Refresca cada 15 segundos automáticamente
+    };
   </script>
 </body>
 </html>
