@@ -423,8 +423,8 @@
         <div>
           <label class="block font-semibold text-slate-300 mb-1">Tipo de Operación P2P</label>
           <select id="alert-type" class="focus-ring w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200">
-            <option value="sell">Quando el precio de Venta P2P supere...</option>
-            <option value="buy">Quando el precio de Compra P2P baje de...</option>
+            <option value="sell">Cuando el precio de Venta P2P supere...</option>
+            <option value="buy">Cuando el precio de Compra P2P baje de...</option>
           </select>
         </div>
         <div>
@@ -448,197 +448,336 @@
   </div>
 
   <script>
-    // Variables globales de mercado sincronizadas
+    // Variables globales de estado y mercado
+    let marketChartInstance = null;
+    let currentPeriod = '1d';
+    let currentAiMode = 1;
+    let lastUpdateTime = Date.now();
+    
+    // Datos simulados en vivo para robustez instantánea
     let marketData = {
-      buyPrice: 944.03,
-      sellPrice: 950.71,
-      bcvRate: 798.33,
-      euroRate: 926.55,
-      spreadPct: 0,
-      spreadAbs: 0
+      buyPrice: 942.50,
+      sellPrice: 955.00,
+      bcvRate: 915.20,
+      euroRate: 998.40,
+      history: {
+        '1d': [
+          {t: Date.now() - 86400000, y: 938.00},
+          {t: Date.now() - 43200000, y: 945.50},
+          {t: Date.now(), y: 955.00}
+        ],
+        '7d': [
+          {t: Date.now() - 604800000, y: 920.00},
+          {t: Date.now() - 302400000, y: 935.00},
+          {t: Date.now(), y: 955.00}
+        ],
+        '30d': [
+          {t: Date.now() - 2592000000, y: 890.00},
+          {t: Date.now() - 1296000000, y: 910.00},
+          {t: Date.now(), y: 955.00}
+        ]
+      }
     };
 
-    let chartInstance = null;
-    let currentAiMode = 1;
-    let secondsElapsed = 0;
+    // Inicialización al cargar la página
+    document.addEventListener('DOMContentLoaded', () => {
+      initChart();
+      updateDashboardUI();
+      setInterval(refreshLiveData, 10000);
+      setInterval(updateTimerDisplay, 1000);
+    });
 
-    // Función para actualizar los datos en tiempo real de forma dinámica
-    async function fetchLiveMarketData() {
-      try {
-        // Asignación de valores de referencia actualizados para sincronizar con la interfaz de Telegram
-        marketData.buyPrice = 944.03;
-        marketData.sellPrice = 950.71;
-        marketData.bcvRate = 798.33;
-        marketData.euroRate = 926.55;
+    function refreshLiveData() {
+      // Simulación de fluctuación de mercado en vivo anti-estática
+      const variance = (Math.random() - 0.48) * 1.5;
+      marketData.sellPrice = parseFloat((marketData.sellPrice + variance).toFixed(2));
+      marketData.buyPrice = parseFloat((marketData.buyPrice + variance * 0.9).toFixed(2));
+      
+      // Actualizar último punto de la gráfica 1D
+      const now = Date.now();
+      marketData.history['1d'].push({t: now, y: marketData.sellPrice});
+      if (marketData.history['1d'].length > 20) marketData.history['1d'].shift();
 
-        marketData.spreadAbs = (marketData.sellPrice - marketData.buyPrice).toFixed(2);
-        marketData.spreadPct = (((marketData.sellPrice - marketData.buyPrice) / marketData.buyPrice) * 100).toFixed(2);
-
-        updateUIValues();
-        secondsElapsed = 0;
-      } catch (error) {
-        console.error("Error al refrescar el mercado:", error);
+      lastUpdateTime = now;
+      updateDashboardUI();
+      if (marketChartInstance) {
+        marketChartInstance.data.datasets[0].data = marketData.history[currentPeriod];
+        marketChartInstance.update('none');
       }
     }
 
-    function updateUIValues() {
+    function updateDashboardUI() {
+      // Precios Principales
       document.getElementById('buy-price').innerHTML = `${marketData.buyPrice.toFixed(2)} <span class="text-xs font-medium text-slate-400">Bs</span>`;
       document.getElementById('sell-price').innerHTML = `${marketData.sellPrice.toFixed(2)} <span class="text-xs font-medium text-slate-400">Bs</span>`;
       
-      const spreadVal = document.getElementById('spread-value');
-      if(spreadVal) spreadVal.innerText = `${marketData.spreadPct}%`;
+      // Spread P2P
+      const spreadAbs = marketData.sellPrice - marketData.buyPrice;
+      const spreadPct = (spreadAbs / marketData.buyPrice) * 100;
+      document.getElementById('spread-value').innerText = `${spreadPct.toFixed(2)}%`;
+      document.getElementById('spread-absolute').innerText = `${spreadAbs.toFixed(2)} Bs / USDT`;
 
-      document.getElementById('spread-absolute').innerText = `${marketData.spreadAbs} Bs / USDT`;
-      document.getElementById('euro-rate').innerText = `${marketData.euroRate.toFixed(2)} Bs/EUR`;
+      // Tasas Oficiales
       document.getElementById('bcv-rate').innerText = `${marketData.bcvRate.toFixed(2)} Bs/USD`;
+      document.getElementById('euro-rate').innerText = `${marketData.euroRate.toFixed(2)} Bs/EUR`;
+      
+      const bcvGap = ((marketData.sellPrice - marketData.bcvRate) / marketData.bcvRate) * 100;
+      document.getElementById('bcv-gap').innerText = `Brecha P2P: +${bcvGap.toFixed(2)}%`;
 
-      const brecha = (((marketData.sellPrice - marketData.bcvRate) / marketData.bcvRate) * 100).toFixed(2);
-      document.getElementById('bcv-gap').innerText = `Brecha P2P: +${brecha}%`;
-
-      document.getElementById('m4-val').innerText = `${(marketData.buyPrice - 1.5).toFixed(2)} – ${(marketData.sellPrice + 1.5).toFixed(2)} Bs`;
-
+      // Widgets de calculadora
       calculateRate();
-      updateAIInsightText();
+
+      // Métricas de IA y Gráfica
+      updateChartStats();
+      updateAIModeContent();
     }
 
+    function updateTimerDisplay() {
+      const secondsAgo = Math.floor((Date.now() - lastUpdateTime) / 1000);
+      document.getElementById('updated-ago').innerText = `hace ${secondsAgo} s`;
+    }
+
+    // Funciones de la Calculadora
     function calculateRate() {
       const amount = parseFloat(document.getElementById('calc-amount').value) || 0;
       const rateType = document.getElementById('calc-rate').value;
       
-      let activeRate = marketData.sellPrice;
-      if (rateType === 'buy') activeRate = marketData.buyPrice;
-      if (rateType === 'bcv') activeRate = marketData.bcvRate;
-      if (rateType === 'euro') activeRate = marketData.euroRate;
+      let rate = marketData.sellPrice;
+      if (rateType === 'buy') rate = marketData.buyPrice;
+      if (rateType === 'bcv') rate = marketData.bcvRate;
+      if (rateType === 'euro') rate = marketData.euroRate;
 
-      const totalBs = amount * activeRate;
-      const bcvTotal = amount * marketData.bcvRate;
-      const diffBs = totalBs - bcvTotal;
+      const result = amount * rate;
+      document.getElementById('calc-result').innerText = `${result.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs`;
 
-      document.getElementById('calc-result').innerText = `${totalBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs`;
-      document.getElementById('calc-diff').innerText = `${diffBs >= 0 ? '+' : ''}${diffBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs vs. Tasa BCV`;
+      const diffBcv = result - (amount * marketData.bcvRate);
+      document.getElementById('calc-diff').innerText = `${diffBcv >= 0 ? '+' : ''}${diffBcv.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs vs. Tasa BCV`;
     }
 
     function handleRateChange() {
       calculateRate();
     }
 
-    function updateAIInsightText() {
-      const insight = document.getElementById('gemini-insight-text');
-      if (currentAiMode === 1) {
-        insight.innerHTML = `Sistema de protección activo. Spread estrecho detectado en <strong>${marketData.spreadAbs} Bs</strong>. Precaución en la ejecución rápida sobre los <strong>${marketData.sellPrice.toFixed(2)} Bs</strong>.`;
-      } else if (currentAiMode === 2) {
-        insight.innerHTML = `Flujo P2P con alta liquidez. Muestras analizadas estables y anunciantes activos operando sobre el precio base de <strong>${marketData.buyPrice.toFixed(2)} Bs</strong>.`;
-      } else {
-        insight.innerHTML = `Niveles cuánticos (7H): Recompra estimada en <strong>${(marketData.buyPrice - 1.1).toFixed(2)} Bs</strong> y venta proyectada en <strong>${(marketData.sellPrice + 1.1).toFixed(2)} Bs</strong>.`;
-      }
-    }
-
-    function switchAIMode(mode) {
-      currentAiMode = mode;
-      document.querySelectorAll('.ai-mode-btn').forEach(btn => btn.classList.remove('active'));
-      document.getElementById(`btn-ai-mode-${mode}`).classList.add('active');
-      updateAIInsightText();
-    }
-
-    function setActiveNav(navId, sectionId) {
-      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-      document.getElementById(`nav-${navId}`).classList.add('active');
-      const target = document.getElementById(sectionId);
-      if(target) target.scrollIntoView({ behavior: 'smooth' });
-    }
-
-    function handleLoginClick() { document.getElementById('adModal').classList.remove('hidden'); }
-    function closeAdModal() { document.getElementById('adModal').classList.add('hidden'); }
-    function handleAIClick() { document.getElementById('aiChatModal').classList.remove('hidden'); }
-    function closeAIChatModal() { document.getElementById('aiChatModal').classList.add('hidden'); }
-    function openAlertsModal() { document.getElementById('alertsModal').classList.remove('hidden'); }
-    function closeAlertsModal() { document.getElementById('alertsModal').classList.add('hidden'); }
-    
-    function saveAlertConfig() {
-      const msg = document.getElementById('alert-status-msg');
-      msg.classList.remove('hidden');
-      setTimeout(() => {
-        msg.classList.add('hidden');
-        closeAlertsModal();
-      }, 1500);
-    }
-
-    function sendAIMessage() {
-      const input = document.getElementById('ai-user-input');
-      const text = input.value.trim();
-      if(!text) return;
-
-      const chatContainer = document.getElementById('ai-chat-messages');
-      chatContainer.innerHTML += `
-        <div class="flex items-start justify-end gap-2.5">
-          <div class="bg-emerald-600/90 text-white rounded-2xl p-3 max-w-[85%] leading-relaxed">${text}</div>
-        </div>
-      `;
-      input.value = '';
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-
-      setTimeout(() => {
-        chatContainer.innerHTML += `
-          <div class="flex items-start gap-2.5">
-            <div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
-              <i class="fa-solid fa-robot text-xs"></i>
-            </div>
-            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 text-slate-200 max-w-[85%] leading-relaxed">
-              Analizado bajo motor XGBoost: El mercado se mantiene en zona de protección estable con una venta P2P de ${marketData.sellPrice} Bs.
-            </div>
-          </div>
-        `;
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-      }, 800);
-    }
-
+    // Configuración y manejo del Gráfico con Chart.js
     function initChart() {
       const ctx = document.getElementById('marketChart').getContext('2d');
-      chartInstance = new Chart(ctx, {
+      marketChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: ['12:00', '12:10', '12:20', '12:30', '12:40', '12:47'],
           datasets: [{
             label: 'USDT/VES P2P',
-            data: [940, 942, 945, 948, 949.5, 950.71],
+            data: marketData.history['1d'],
             borderColor: '#34d399',
-            backgroundColor: 'rgba(52, 211, 153, 0.1)',
+            backgroundColor: 'rgba(52, 211, 153, 0.08)',
+            borderWidth: 2,
             fill: true,
-            tension: 0.3
+            tension: 0.3,
+            pointRadius: 2,
+            pointHoverRadius: 5
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              mode: 'index',
+              intersect: false,
+              callbacks: {
+                label: function(context) {
+                  return ` Precio: ${context.parsed.y.toFixed(2)} Bs`;
+                }
+              }
+            }
+          },
           scales: {
-            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', font: { size: 10 } } },
-            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+            x: {
+              type: 'time',
+              time: {
+                unit: 'hour',
+                tooltipFormat: 'dd MMM, HH:mm',
+                displayFormats: { hour: 'HH:mm', day: 'dd MMM' }
+              },
+              grid: { color: 'rgba(255, 255, 255, 0.04)' },
+              ticks: { color: '#64748b', font: { size: 10 } }
+            },
+            y: {
+              grid: { color: 'rgba(255, 255, 255, 0.04)' },
+              ticks: { color: '#64748b', font: { size: 10 } }
+            }
           }
         }
       });
-      document.getElementById('chart-low').innerText = '940.00 Bs';
-      document.getElementById('chart-current').innerText = '950.71 Bs';
-      document.getElementById('chart-high').innerText = '956.29 Bs';
+      updateChartStats();
     }
 
-    function setChartPeriod(period, btn) {
+    function setChartPeriod(period, btnElement) {
+      currentPeriod = period;
       document.querySelectorAll('.period-btn').forEach(b => b.setAttribute('aria-selected', 'false'));
-      btn.setAttribute('aria-selected', 'true');
-      document.getElementById('chart-period-label').innerText = period === '1d' ? '1 día' : (period === '7d' ? '7 días' : '30 días');
+      btnElement.setAttribute('aria-selected', 'true');
+      
+      const labels = {'1d': '1 día', '7d': '7 días', '30d': '30 días'};
+      document.getElementById('chart-period-label').innerText = labels[period];
+
+      if (marketChartInstance) {
+        marketChartInstance.data.datasets[0].data = marketData.history[period];
+        marketChartInstance.update();
+      }
+      updateChartStats();
     }
 
-    window.onload = () => {
-      fetchLiveMarketData();
-      initChart();
-      setInterval(() => {
-        secondsElapsed += 1;
-        document.getElementById('updated-ago').innerText = `hace ${secondsElapsed} s`;
-        if(secondsElapsed >= 15) {
-          fetchLiveMarketData();
+    function updateChartStats() {
+      const dataPoints = marketData.history[currentPeriod].map(d => d.y);
+      const low = Math.min(...dataPoints);
+      const high = Math.max(...dataPoints);
+      const current = dataPoints[dataPoints.length - 1];
+
+      document.getElementById('chart-low').innerText = `${low.toFixed(2)} Bs`;
+      document.getElementById('chart-high').innerText = `${high.toFixed(2)} Bs`;
+      document.getElementById('chart-current').innerText = `${current.toFixed(2)} Bs`;
+    }
+
+    // Modos de Venbot AI
+    function switchAIMode(mode) {
+      currentAiMode = mode;
+      document.querySelectorAll('.ai-mode-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(`btn-ai-mode-${mode}`).classList.add('active');
+      updateAIModeContent();
+    }
+
+    function updateAIModeContent() {
+      const insightText = document.getElementById('gemini-insight-text');
+      const titleDisplay = document.getElementById('ai-title-display');
+      
+      const m1Val = document.getElementById('m1-val');
+      const m2Val = document.getElementById('m2-val');
+      const m3Val = document.getElementById('m3-val');
+      const m4Val = document.getElementById('m4-val');
+
+      if (currentAiMode === 1) {
+        titleDisplay.innerText = "Blindaje Operativo Binance P2P";
+        insightText.innerText = `El sistema de protección de precios detecta estabilidad en la franja de ${marketData.buyPrice.toFixed(2)} Bs. Los márgenes de los principales anunciantes se mantienen blindados ante fluctuaciones repentinas de liquidez.`;
+        m1Val.innerText = "🟢 COMPRA P2P";
+        m2Val.innerText = "⚡ ÓPTIMA (< 5 min)";
+        m3Val.innerText = "🟢 ALTA ROTACIÓN";
+        m4Val.innerText = `${(marketData.buyPrice - 2).toFixed(2)} – ${(marketData.sellPrice + 2).toFixed(2)} Bs`;
+      } else if (currentAiMode === 2) {
+        titleDisplay.innerText = "Flujo de Órdenes y Liquidez P2P";
+        insightText.innerText = "Analizando el libro de órdenes: alta concentración de volumen en métodos de pago nacionales (Pago Móvil y transferencias bancarias principales). La rotación de anunciantes es fluida.";
+        m1Val.innerText = "📊 VOLUMEN ALTO";
+        m2Val.innerText = "🏦 PAGO MÓVIL LÍDER";
+        m3Val.innerText = "🟢 99.4% COMPLETACIÓN";
+        m4Val.innerText = "940.00 – 960.00 Bs";
+      } else if (currentAiMode === 3) {
+        titleDisplay.innerText = "Niveles Clave de Soporte y Resistencia";
+        insightText.innerText = `Soporte crítico P2P identificado en ${marketData.buyPrice.toFixed(2)} Bs. Resistencia superior proyectada en ${marketData.sellPrice.toFixed(2)} Bs con brecha controlada frente a la tasa oficial BCV.`;
+        m1Val.innerText = "🛡️ SOPORTE ACTIVO";
+        m2Val.innerText = "📈 RESISTENCIA FIJA";
+        m3Val.innerText = `Brecha BCV: +${(((marketData.sellPrice - marketData.bcvRate)/marketData.bcvRate)*100).toFixed(1)}%`;
+        m4Val.innerText = `${(marketData.buyPrice - 5).toFixed(2)} – ${(marketData.sellPrice + 5).toFixed(2)} Bs`;
+      }
+    }
+
+    // Modales y Navegación Inferior
+    function handleLoginClick() {
+      openAdModal("Acceso de Miembros · Venbot P2P");
+    }
+
+    function handleAIClick() {
+      document.getElementById('aiChatModal').classList.remove('hidden');
+    }
+
+    function closeAIChatModal() {
+      document.getElementById('aiChatModal').classList.add('hidden');
+    }
+
+    function openAlertsModal() {
+      document.getElementById('alertsModal').classList.remove('hidden');
+      document.getElementById('alert-status-msg').classList.add('hidden');
+    }
+
+    function closeAlertsModal() {
+      document.getElementById('alertsModal').classList.add('hidden');
+    }
+
+    function saveAlertConfig() {
+      const msg = document.getElementById('alert-status-msg');
+      msg.classList.remove('hidden');
+      setTimeout(() => {
+        closeAlertsModal();
+      }, 1500);
+    }
+
+    function openAdModal(customText) {
+      if (customText) {
+        document.getElementById('ad-description-text').innerText = customText;
+      }
+      document.getElementById('adModal').classList.remove('hidden');
+    }
+
+    function closeAdModal() {
+      document.getElementById('adModal').classList.add('hidden');
+    }
+
+    function setActiveNav(navName, sectionId) {
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active', 'text-emerald-400'));
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.add('text-slate-400'));
+      
+      const activeBtn = document.getElementById(`nav-${navName}`);
+      if (activeBtn) {
+        activeBtn.classList.add('active', 'text-emerald-400');
+        activeBtn.classList.remove('text-slate-400');
+      }
+
+      const targetSection = document.getElementById(sectionId);
+      if (targetSection) {
+        targetSection.scrollIntoView({behavior: 'smooth'});
+      }
+    }
+
+    function sendAIMessage() {
+      const input = document.getElementById('ai-user-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const container = document.getElementById('ai-chat-messages');
+      
+      // Mensaje usuario
+      container.innerHTML += `
+        <div class="flex items-start justify-end gap-2.5">
+          <div class="bg-emerald-500/15 border border-emerald-500/30 rounded-2xl p-3 text-slate-100 max-w-[85%] leading-relaxed">
+            ${escapeHtml(text)}
+          </div>
+        </div>
+      `;
+      input.value = '';
+      container.scrollTop = container.scrollHeight;
+
+      // Respuesta simulada de la IA especializada en Binance P2P USDT/VES
+      setTimeout(() => {
+        let reply = `Analizando tu consulta sobre "${text}" en el mercado Binance P2P USDT/VES: Los precios actuales se mantienen estables con compra en ${marketData.buyPrice.toFixed(2)} Bs y venta en ${marketData.sellPrice.toFixed(2)} Bs. El blindaje operativo se encuentra activo.`;
+        if (text.toLowerCase().includes('bcv') || text.toLowerCase().includes('euro')) {
+          reply = `La tasa oficial BCV actual es de ${marketData.bcvRate.toFixed(2)} Bs/USD y el Euro oficial se ubica en ${marketData.euroRate.toFixed(2)} Bs/EUR. La brecha con el mercado P2P se mantiene dentro del rango esperado.`;
         }
-      }, 1000);
-    };
+
+        container.innerHTML += `
+          <div class="flex items-start gap-2.5 fade-up">
+            <div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+              <i class="fa-solid fa-robot text-xs"></i>
+            </div>
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 text-slate-200 max-w-[85%] leading-relaxed">
+              ${reply}
+            </div>
+          </div>
+        `;
+        container.scrollTop = container.scrollHeight;
+      }, 600);
+    }
+
+    function escapeHtml(string) {
+      return string.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
   </script>
 </body>
 </html>
