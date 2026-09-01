@@ -449,7 +449,169 @@
   </div>
 
   <script>
-    // Variables globales de datos y estado operativo
+    // URL base de tu backend en Render
+    const API_BASE_URL = "https://p2p-monitor-binance.onrender.com";
+
+    let marketData = {
+      buyPrice: 0,
+      sellPrice: 0,
+      bcvRate: 0,
+      euroRate: 0,
+      spread: 0
+    };
+
+    let chartInstance = null;
+
+    // Inicializar la aplicación al cargar la página
+    document.addEventListener("DOMContentLoaded", () => {
+      fetchMarketData();
+      initChart();
+      
+      // Actualizar datos automáticamente cada 60 segundos
+      setInterval(fetchMarketData, 60000);
+    });
+
+    // Función para obtener los datos desde FastAPI en Render
+    async function fetchMarketData() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/market`);
+        if (!response.ok) throw new Error("Error al conectar con el backend");
+        
+        const data = await response.json();
+        
+        marketData.buyPrice = data.buy_price || 0;
+        marketData.sellPrice = data.sell_price || 0;
+        marketData.bcvRate = data.bcv_rate || 0;
+        marketData.euroRate = data.euro_rate || 0;
+        marketData.spread = data.spread || 0;
+
+        // Actualizar la interfaz visual con los datos del backend
+        document.getElementById("buy-price").innerHTML = `${marketData.buyPrice.toFixed(2)} <span class="text-xs font-medium text-slate-400">Bs</span>`;
+        document.getElementById("sell-price").innerHTML = `${marketData.sellPrice.toFixed(2)} <span class="text-xs font-medium text-slate-400">Bs</span>`;
+        document.getElementById("spread-value").innerText = `${marketData.spread.toFixed(2)}%`;
+        document.getElementById("bcv-rate").innerText = `${marketData.bcvRate.toFixed(2)} Bs/USD`;
+        document.getElementById("euro-rate").innerText = `${marketData.euroRate.toFixed(2)} Bs/EUR`;
+        
+        // Calcular brecha BCV vs P2P
+        if(marketData.bcvRate > 0) {
+          const gap = ((marketData.sellPrice - marketData.bcvRate) / marketData.bcvRate) * 100;
+          document.getElementById("bcv-gap").innerText = `Brecha P2P: ${gap.toFixed(2)}%`;
+        }
+
+        calculateRate();
+        updateTimestamp();
+      } catch (error) {
+        console.error("Aviso de sincronización:", error);
+        document.getElementById("sync-status").innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber-400"></i> Reconectando con Render...`;
+      }
+    }
+
+    // Lógica de la calculadora integrada
+    function calculateRate() {
+      const amount = parseFloat(document.getElementById("calc-amount").value) || 0;
+      const rateType = document.getElementById("calc-rate").value;
+      
+      let activeRate = marketData.sellPrice;
+      if (rateType === "buy") activeRate = marketData.buyPrice;
+      if (rateType === "bcv") activeRate = marketData.bcvRate;
+      if (rateType === "euro") activeRate = marketData.euroRate;
+
+      const totalBs = amount * activeRate;
+      document.getElementById("calc-result").innerText = `${totalBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs`;
+
+      if(marketData.bcvRate > 0 && activeRate > 0) {
+        const diffBs = totalBs - (amount * marketData.bcvRate);
+        document.getElementById("calc-diff").innerText = `${diffBs >= 0 ? '+' : ''}${diffBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Bs vs. Tasa BCV`;
+      }
+    }
+
+    function handleRateChange() {
+      calculateRate();
+    }
+
+    // Inicializar gráfico de velas con Chart.js
+    function initChart() {
+      const ctx = document.getElementById('marketChart').getContext('2d');
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'],
+          datasets: [{
+            label: 'USDT/VES P2P',
+            data: [0, 0, 0, 0, 0, 0],
+            borderColor: '#34d399',
+            backgroundColor: 'rgba(52, 211, 153, 0.1)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: 'rgba(255, 255, 255, 0.05)' } },
+            y: { grid: { color: 'rgba(255, 255, 255, 0.05)' } }
+          }
+        }
+      });
+    }
+
+    function setChartPeriod(period, btn) {
+      document.querySelectorAll('.period-btn').forEach(b => b.setAttribute('aria-selected', 'false'));
+      btn.setAttribute('aria-selected', 'true');
+      document.getElementById('chart-period-label').innerText = period.toUpperCase();
+    }
+
+    // Funciones de navegación e interfaz móvil
+    function setActiveNav(name, sectionId) {
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active', 'text-emerald-400'));
+      document.getElementById(`nav-${name}`).classList.add('active');
+      document.getElementById(sectionId).scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Modales (IA, Alertas, Anuncios)
+    function handleAIClick() { document.getElementById('aiChatModal').classList.remove('hidden'); }
+    function closeAIChatModal() { document.getElementById('aiChatModal').classList.add('hidden'); }
+    
+    function openAlertsModal() { document.getElementById('alertsModal').classList.remove('hidden'); }
+    function closeAlertsModal() { document.getElementById('alertsModal').classList.add('hidden'); }
+    function saveAlertConfig() {
+      document.getElementById('alert-status-msg').classList.remove('hidden');
+      setTimeout(closeAlertsModal, 1500);
+    }
+
+    function closeAdModal() {
+      document.getElementById('adModal').classList.add('hidden');
+    }
+
+    function handleLoginClick() {
+      alert("Módulo de autenticación P2P próximamente disponible.");
+    }
+
+    function switchAIMode(mode) {
+      document.querySelectorAll('.ai-mode-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(`btn-ai-mode-${mode}`).classList.add('active');
+    }
+
+    function sendAIMessage() {
+      const input = document.getElementById('ai-user-input');
+      const container = document.getElementById('ai-chat-messages');
+      if(!input.value.trim()) return;
+
+      container.innerHTML += `<div class="flex justify-end"><div class="bg-emerald-500/20 border border-emerald-500/30 rounded-2xl p-3 text-slate-100 max-w-[85%]">${input.value}</div></div>`;
+      const query = input.value;
+      input.value = '';
+
+      setTimeout(() => {
+        container.innerHTML += `<div class="flex items-start gap-2.5"><div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0"><i class="fa-solid fa-robot text-xs"></i></div><div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 text-slate-200 max-w-[85%]">Analizando tu consulta sobre "${query}" en el mercado P2P actual...</div></div>`;
+        container.scrollTop = container.scrollHeight;
+      }, 800);
+    }
+
+    function updateTimestamp() {
+      document.getElementById('updated-ago').innerText = "hace un momento";
+    }
   </script>
 </body>
 </html>
